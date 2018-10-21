@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <optional>
 #include <unistd.h>
 
 static const char* get_token_kind(const CXTokenKind& kind)
@@ -125,6 +124,11 @@ static Config parse_opt(int argc, char* argv[])
 
     for (int i = optind + 1; i < argc; i++) {
         c.files.emplace_back(argv[i]);
+    }
+
+    if (c.files.empty()) {
+        std::cerr << "FILE is not specified." << std::endl;
+        std::exit(EXIT_FAILURE);
     }
 
     return c;

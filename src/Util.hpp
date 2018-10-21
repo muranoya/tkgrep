@@ -16,11 +16,10 @@ unsigned int get_filesize(const std::string& filename)
     return file.tellg();
 }
 
-std::string strtolower(const std::string& str)
+std::string strtolower(std::string str) noexcept
 {
-    std::string ret;
-    std::transform(str.begin(), str.end(), ret.begin(), ::tolower);
-    return ret;
+    std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+    return str;
 }
 } // namespace Util
 
