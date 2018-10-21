@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <regex>
 #include <unistd.h>
 
 static const char* get_token_kind(CXTokenKind kind) noexcept
@@ -50,17 +51,13 @@ static bool is_match_token_kind(CXTokenKind kind, unsigned char target) noexcept
 static void print_match_tokens(
     const CXTranslationUnit& tu, const CXToken* tokens, unsigned int num_tokens, const Config& c)
 {
-    std::string pattern = c.pattern;
-    if (c.ignore_case) {
-        pattern = Util::strtolower(pattern);
-    }
-
+    std::regex re(c.pattern);
     unsigned int count = 0U;
     for (unsigned int i = 0U; i < num_tokens; i++) {
         const CXToken& token = tokens[i];
-        CXTokenKind kind = clang_getTokenKind(token);
+        const CXTokenKind kind = clang_getTokenKind(token);
         CXString spell = clang_getTokenSpelling(tu, token);
-        CXSourceLocation loc = clang_getTokenLocation(tu, token);
+        const CXSourceLocation loc = clang_getTokenLocation(tu, token);
 
         CXFile file;
         unsigned int line, column, offset;
@@ -72,7 +69,8 @@ static void print_match_tokens(
             spell_s = Util::strtolower(spell_s);
         }
 
-        if (c.print_tokens_exit || pattern == spell_s) {
+        std::smatch match;
+        if (c.print_tokens_exit || regex_match(spell_s, match, re) == 1) {
             if (is_match_token_kind(kind, c.target)) {
                 if (c.only_count) {
                     count++;
