@@ -10,8 +10,8 @@
 #include <iostream>
 #include <regex>
 #include <set>
-#include <unistd.h>
 #include <string>
+#include <unistd.h>
 
 const std::string CL_RED("\x1B[31m");
 const std::string CL_NO("\033[0m");
