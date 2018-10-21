@@ -17,6 +17,9 @@ struct Config {
     // target = 0 then all token kind are searched.
     unsigned char target = 0U;
 
+    int after_context = 0U;
+    int before_context = 0U;
+
     bool only_count = false;
     bool print_tokens_exit = false;
     bool ignore_case = false;
