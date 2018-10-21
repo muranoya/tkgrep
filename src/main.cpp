@@ -31,9 +31,15 @@ static const char* get_token_kind(const CXTokenKind& kind)
     }
 }
 
-static void print_match_tokens(const CXTranslationUnit& tu, const CXToken* tokens,
-    unsigned int num_tokens, std::string pattern, bool ignore_case)
+static void print_match_tokens(
+    const CXTranslationUnit& tu, const CXToken* tokens, unsigned int num_tokens, const Config& c)
 {
+    std::string pattern = c.pattern;
+    if (c.ignore_case) {
+        pattern = Util::strtolower(pattern);
+    }
+
+    unsigned int count = 0U;
     for (unsigned int i = 0U; i < num_tokens; i++) {
         const CXToken& token = tokens[i];
         CXTokenKind kind = clang_getTokenKind(token);
@@ -46,18 +52,25 @@ static void print_match_tokens(const CXTranslationUnit& tu, const CXToken* token
         CXString filename = clang_getFileName(file);
 
         std::string spell_s(clang_getCString(spell));
-        if (ignore_case) {
-            pattern = Util::strtolower(pattern);
+        if (!c.print_tokens_exit && c.ignore_case) {
             spell_s = Util::strtolower(spell_s);
         }
 
-        if (pattern == spell_s) {
-            std::printf("%s:%d:%d\t%s\t%s\n", clang_getCString(filename), line, column,
-                get_token_kind(kind), clang_getCString(spell));
+        if (c.print_tokens_exit || pattern == spell_s) {
+            if (c.only_count) {
+                count++;
+            } else {
+                std::printf("%s:%d:%d\t%s\t%s\n", clang_getCString(filename), line, column,
+                    get_token_kind(kind), clang_getCString(spell));
+            }
         }
 
         clang_disposeString(filename);
         clang_disposeString(spell);
+    }
+
+    if (c.only_count) {
+        std::printf("%d\n", count);
     }
 }
 
@@ -88,8 +101,9 @@ static void print_usage(int argc, char* argv[]) noexcept
     std::printf("Usage: %s [OPTION]... PATTERN FILE...\n", argv[0]);
     std::printf("%s\n", clang_getCString(version));
     std::printf("\n");
-    std::printf("\t-i:\tignore case distinctions");
-    std::printf("\t-h:\tdisplay this help text");
+    std::printf("\t-i:\tignore case distinctions\n");
+    std::printf("\t-p:\tprint all tokens and exit, ignore PATTERN\n");
+    std::printf("\t-h:\tdisplay this help text\n");
 
     clang_disposeString(version);
 }
@@ -99,8 +113,14 @@ static Config parse_opt(int argc, char* argv[]) noexcept
     Config c;
 
     int opt;
-    while ((opt = getopt(argc, argv, "h")) != -1) {
+    while ((opt = getopt(argc, argv, "cpih")) != -1) {
         switch (opt) {
+        case 'c':
+            c.only_count = true;
+            break;
+        case 'p':
+            c.print_tokens_exit = true;
+            break;
         case 'i':
             c.ignore_case = true;
             break;
@@ -112,14 +132,19 @@ static Config parse_opt(int argc, char* argv[]) noexcept
         }
     }
 
+    int oi = optind;
     if (optind < argc) {
-        c.pattern = argv[optind];
+        if (!c.print_tokens_exit) {
+            c.pattern = argv[oi];
+        } else {
+            oi--;
+        }
     } else {
         std::cerr << "PATTERN is not specified." << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
-    for (int i = optind + 1; i < argc; i++) {
+    for (int i = oi + 1; i < argc; i++) {
         c.files.emplace_back(argv[i]);
     }
 
@@ -158,7 +183,7 @@ int main(int argc, char* argv[])
             unsigned int numTokens;
             clang_tokenize(tu, range, &tokens, &numTokens);
 
-            print_match_tokens(tu, tokens, numTokens, c.pattern, c.ignore_case);
+            print_match_tokens(tu, tokens, numTokens, c);
 
             clang_disposeTokens(tu, tokens, numTokens);
         } catch (TkGrepException& e) {

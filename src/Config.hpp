@@ -5,6 +5,8 @@
 #include <vector>
 
 struct Config {
+    bool only_count = false;
+    bool print_tokens_exit = false;
     bool ignore_case = false;
     std::string pattern;
     std::vector<std::string> files;
