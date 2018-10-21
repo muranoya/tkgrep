@@ -116,8 +116,8 @@ static void print_result(const std::string& filename, const std::vector<std::str
     }
 }
 
-static std::set<MatchLoc> match_tokens(
-    const CXTranslationUnit& tu, const CXToken* tokens, unsigned int num_tokens, const Config& c) noexcept
+static std::set<MatchLoc> match_tokens(const CXTranslationUnit& tu, const CXToken* tokens,
+    unsigned int num_tokens, const Config& c) noexcept
 {
     std::set<MatchLoc> match_lines;
 
@@ -133,13 +133,12 @@ static std::set<MatchLoc> match_tokens(
         clang_getFileLocation(loc, &file, &line, &column, &offset);
 
         std::string spell_s(clang_getCString(spell));
-        if (!c.print_tokens_exit && c.ignore_case) {
+        if (c.ignore_case) {
             spell_s = Util::strtolower(spell_s);
         }
 
         std::smatch match;
-        if ((c.print_tokens_exit || std::regex_search(spell_s, match, re))
-            && is_match_token_kind(kind, c.target)) {
+        if (std::regex_search(spell_s, match, re) && is_match_token_kind(kind, c.target)) {
             match_lines.emplace(line, kind, column + match.position() - 1, match.length());
         }
 
@@ -184,7 +183,6 @@ static void print_usage(int argc, char* argv[]) noexcept
     std::printf("  -G: Surround the matched strings with color on the terminal.\n");
     std::printf("  -R: Read all files under each directory.\n");
     std::printf("  -i: Ignore case distinctions.\n");
-    std::printf("  -p: Print all tokens and exit, ignore PATTERN.\n");
     std::printf("  -h: Display this help text.\n");
 
     clang_disposeString(version);
@@ -195,7 +193,7 @@ static Config parse_opt(int argc, char* argv[]) noexcept
     Config c;
 
     int opt;
-    while ((opt = getopt(argc, argv, "A:B:C:t:GRcpih")) != -1) {
+    while ((opt = getopt(argc, argv, "A:B:C:t:GRcih")) != -1) {
         switch (opt) {
         case 'A': {
             const int c_len = std::atoi(optarg);
@@ -262,9 +260,6 @@ static Config parse_opt(int argc, char* argv[]) noexcept
         case 'c':
             c.only_count = true;
             break;
-        case 'p':
-            c.print_tokens_exit = true;
-            break;
         case 'i':
             c.ignore_case = true;
             break;
@@ -280,11 +275,7 @@ static Config parse_opt(int argc, char* argv[]) noexcept
 
     int oi = optind;
     if (optind < argc) {
-        if (!c.print_tokens_exit) {
-            c.pattern = argv[oi];
-        } else {
-            oi--;
-        }
+        c.pattern = argv[oi];
     } else {
         std::cerr << "PATTERN is not specified." << std::endl;
         std::exit(EXIT_FAILURE);
