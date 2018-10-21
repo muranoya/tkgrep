@@ -117,7 +117,7 @@ static void print_result(const std::string& filename, const std::vector<std::str
 }
 
 static std::set<MatchLoc> match_tokens(
-    const CXTranslationUnit& tu, const CXToken* tokens, unsigned int num_tokens, const Config& c)
+    const CXTranslationUnit& tu, const CXToken* tokens, unsigned int num_tokens, const Config& c) noexcept
 {
     std::set<MatchLoc> match_lines;
 
@@ -348,20 +348,24 @@ static void tkgrep_r(const std::string& filename, const Config& c) noexcept
             return;
         }
 
+        CXSourceRange range;
         try {
-            CXSourceRange range = get_filerange(tu, filename.c_str(), filesize);
-            CXToken* tokens;
-            unsigned int numTokens;
-            clang_tokenize(tu, range, &tokens, &numTokens);
-
-            const std::set<MatchLoc> match_lines = match_tokens(tu, tokens, numTokens, c);
-            print_result(filename, file_content, match_lines, c);
-
-            clang_disposeTokens(tu, tokens, numTokens);
+            range = get_filerange(tu, filename.c_str(), filesize);
         } catch (TkGrepException& e) {
             std::cerr << filename << ": " << e.msg << std::endl;
+            goto end;
         }
 
+        CXToken* tokens;
+        unsigned int numTokens;
+        clang_tokenize(tu, range, &tokens, &numTokens);
+
+        const std::set<MatchLoc> match_lines = match_tokens(tu, tokens, numTokens, c);
+        print_result(filename, file_content, match_lines, c);
+
+        clang_disposeTokens(tu, tokens, numTokens);
+
+end:
         clang_disposeTranslationUnit(tu);
         clang_disposeIndex(index);
     }
