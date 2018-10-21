@@ -1,7 +1,11 @@
 #include "Util.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 unsigned int Util::get_filesize(const std::string& filename)
 {
@@ -29,4 +33,14 @@ std::vector<std::string> Util::read_file_content(const std::string& filename) no
     }
 
     return file_content;
+}
+
+bool Util::is_directory(const std::string& path)
+{
+    struct stat buf;
+    const int ret = stat(path.c_str(), &buf);
+    if (ret != 0) {
+        throw TkGrepException(std::strerror(errno));
+    }
+    return ((buf.st_mode & S_IFDIR) == S_IFDIR);
 }

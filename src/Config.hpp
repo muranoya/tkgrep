@@ -26,6 +26,8 @@ struct Config {
     // the stdout is pipe not tty then true.
     bool stdout_is_pipe = false;
 
+    bool recursive = false;
+
     bool only_count = false;
     bool print_tokens_exit = false;
     bool ignore_case = false;

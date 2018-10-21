@@ -2,7 +2,7 @@
 
 TARGET=tkgrep
 CXX=clang++
-CXXFLAGS += -O2 -Wall -std=c++17 -g `llvm-config --cxxflags` -fexceptions
+CXXFLAGS += -O2 -Wall -std=c++14 -g `llvm-config --cxxflags` -fexceptions
 LDFLAGS += `llvm-config --ldflags` -lclang
 
 all: $(TARGET)
