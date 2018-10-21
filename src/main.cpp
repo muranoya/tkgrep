@@ -8,34 +8,37 @@
 #include <cstring>
 #include <iostream>
 #include <regex>
-#include <unistd.h>
 #include <set>
+#include <unistd.h>
+
+const std::string CL_RED("\x1B[31m");
+const std::string CL_NO("\033[0m");
 
 struct MatchLoc {
-    explicit MatchLoc(int l, CXTokenKind k)
-        : line(l)
+    explicit MatchLoc(int line, CXTokenKind k, int start, int len)
+        : line(line)
         , kind(k)
+        , start(start)
+        , len(len)
     {
     }
     explicit MatchLoc(int l)
         : line(l)
         , kind()
+        , start(0)
+        , len(0)
     {
     }
 
-    bool operator==(const MatchLoc&other)
-    {
-        return other.line == line;
-    }
+    bool operator==(const MatchLoc& other) { return other.line == line; }
 
     int line;
     CXTokenKind kind;
+    int start;
+    int len;
 };
 
-bool operator<(const MatchLoc &lhs, const MatchLoc&rhs)
-{
-    return lhs.line < rhs.line;
-}
+bool operator<(const MatchLoc& lhs, const MatchLoc& rhs) { return lhs.line < rhs.line; }
 
 static const char* get_token_kind(CXTokenKind kind) noexcept
 {
@@ -94,14 +97,18 @@ static void print_result(const std::string& filename, const std::vector<std::str
         const int end_line
             = std::min(static_cast<int>(file_content.size()), m.line + c.after_context + 1);
         for (int i = start_line; i < end_line; ++i) {
-            const char *tk = " ";
-            const auto &iter = match_lines.find(MatchLoc(i));
+            const char* tk = " ";
+            const auto& iter = match_lines.find(MatchLoc(i));
+            std::string match_line = file_content[i - 1];
             if (iter != match_lines.cend()) {
                 tk = get_token_kind(iter->kind);
+                if (c.color_print && !c.stdout_is_pipe) {
+                    match_line.insert(iter->start, CL_RED);
+                    match_line.insert(iter->start + iter->len + CL_RED.length(), CL_NO);
+                }
             }
 
-            std::printf("%s:%d:%s\t%s\n", filename.c_str(), i, tk,
-                file_content[i - 1].c_str());
+            std::printf("%s:%d:%s\t%s\n", filename.c_str(), i, tk, match_line.c_str());
             printed_line = i + 1;
         }
     }
@@ -129,9 +136,9 @@ static std::set<MatchLoc> match_tokens(
         }
 
         std::smatch match;
-        if ((c.print_tokens_exit || regex_match(spell_s, match, re) == 1)
+        if ((c.print_tokens_exit || std::regex_search(spell_s, match, re))
             && is_match_token_kind(kind, c.target)) {
-            match_lines.emplace(line, kind);
+            match_lines.emplace(line, kind, column + match.position() - 1, match.length());
         }
 
         clang_disposeString(spell);
@@ -167,14 +174,15 @@ static void print_usage(int argc, char* argv[]) noexcept
     std::printf("Usage: %s [OPTION]... PATTERN FILE...\n", argv[0]);
     std::printf("%s\n", clang_getCString(version));
     std::printf("\n");
-    std::printf("  -A NUM: print NUM lines of trailing context after matching lines.\n");
-    std::printf("  -B NUM: print NUM lines of trailing context before matching lines.\n");
-    std::printf("  -C NUM: print NUM lines of output context.\n");
-    std::printf("  -t KIND: token kind to be searched. KIND is p(punctuation), k(keyword), "
+    std::printf("  -A NUM: Print NUM lines of trailing context after matching lines.\n");
+    std::printf("  -B NUM: Print NUM lines of trailing context before matching lines.\n");
+    std::printf("  -C NUM: Print NUM lines of output context.\n");
+    std::printf("  -t KIND: Token kind to be searched. KIND is p(punctuation), k(keyword), "
                 "i(identifier), l(literal), c(comment), u(unknown).\n");
-    std::printf("  -i: ignore case distinctions.\n");
-    std::printf("  -p: print all tokens and exit, ignore PATTERN.\n");
-    std::printf("  -h: display this help text.\n");
+    std::printf("  -G: Surround the matched strings with color on the terminal.\n");
+    std::printf("  -i: Ignore case distinctions.\n");
+    std::printf("  -p: Print all tokens and exit, ignore PATTERN.\n");
+    std::printf("  -h: Display this help text.\n");
 
     clang_disposeString(version);
 }
@@ -184,7 +192,7 @@ static Config parse_opt(int argc, char* argv[]) noexcept
     Config c;
 
     int opt;
-    while ((opt = getopt(argc, argv, "A:B:C:t:cpih")) != -1) {
+    while ((opt = getopt(argc, argv, "A:B:C:t:Gcpih")) != -1) {
         switch (opt) {
         case 'A': {
             const int c_len = std::atoi(optarg);
@@ -242,6 +250,9 @@ static Config parse_opt(int argc, char* argv[]) noexcept
                 }
             }
         } break;
+        case 'G':
+            c.color_print = true;
+            break;
         case 'c':
             c.only_count = true;
             break;
@@ -258,6 +269,8 @@ static Config parse_opt(int argc, char* argv[]) noexcept
             break;
         }
     }
+
+    c.stdout_is_pipe = (isatty(fileno(stdout)) != 1);
 
     int oi = optind;
     if (optind < argc) {

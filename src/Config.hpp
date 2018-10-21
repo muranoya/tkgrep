@@ -20,6 +20,12 @@ struct Config {
     int after_context = 0U;
     int before_context = 0U;
 
+    bool color_print = false;
+
+    // this is not options.
+    // the stdout is pipe not tty then true.
+    bool stdout_is_pipe = false;
+
     bool only_count = false;
     bool print_tokens_exit = false;
     bool ignore_case = false;
