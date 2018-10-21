@@ -326,7 +326,13 @@ static void tkgrep_r(const std::string& filename, const Config& c) noexcept
             if (std::string(dp->d_name) == "." || std::string(dp->d_name) == "..") {
                 continue;
             }
-            tkgrep_r(filename + "/" + dp->d_name, c);
+
+            std::string next_path = filename;
+            if (next_path.back() != '/') {
+                next_path += '/';
+            }
+            next_path += dp->d_name;
+            tkgrep_r(next_path, c);
         }
     } else {
         unsigned int filesize = 0U;
@@ -353,7 +359,9 @@ static void tkgrep_r(const std::string& filename, const Config& c) noexcept
             range = get_filerange(tu, filename.c_str(), filesize);
         } catch (TkGrepException& e) {
             std::cerr << filename << ": " << e.msg << std::endl;
-            goto end;
+            clang_disposeTranslationUnit(tu);
+            clang_disposeIndex(index);
+            return;
         }
 
         CXToken* tokens;
@@ -364,8 +372,6 @@ static void tkgrep_r(const std::string& filename, const Config& c) noexcept
         print_result(filename, file_content, match_lines, c);
 
         clang_disposeTokens(tu, tokens, numTokens);
-
-end:
         clang_disposeTranslationUnit(tu);
         clang_disposeIndex(index);
     }
