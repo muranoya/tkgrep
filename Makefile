@@ -7,10 +7,13 @@ LDFLAGS += `llvm-config --ldflags` -lclang
 
 all: $(TARGET)
 
-$(TARGET): src/main.o
+$(TARGET): src/main.o src/Util.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 src/main.o: src/main.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $^
+
+src/Util.o: src/Util.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $^
 
 clean:

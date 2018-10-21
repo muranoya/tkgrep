@@ -48,8 +48,8 @@ static bool is_match_token_kind(CXTokenKind kind, unsigned char target) noexcept
     }
 }
 
-static void print_match_tokens(
-    const CXTranslationUnit& tu, const CXToken* tokens, unsigned int num_tokens, const Config& c)
+static void print_match_tokens(const CXTranslationUnit& tu, const CXToken* tokens,
+    unsigned int num_tokens, const std::vector<std::string>& file_content, const Config& c)
 {
     std::regex re(c.pattern);
     unsigned int count = 0U;
@@ -76,7 +76,7 @@ static void print_match_tokens(
                     count++;
                 } else {
                     std::printf("%s:%d:%d\t%s\t%s\n", clang_getCString(filename), line, column,
-                        get_token_kind(kind), clang_getCString(spell));
+                        get_token_kind(kind), file_content[line-1].c_str());
                 }
             }
         }
@@ -215,6 +215,8 @@ int main(int argc, char* argv[])
             continue;
         }
 
+        const std::vector<std::string> file_content = Util::read_file_content(file);
+
         CXIndex index = clang_createIndex(1, 0);
         CXTranslationUnit tu = clang_parseTranslationUnit(index, file.c_str(), nullptr, 0, nullptr,
             0, CXTranslationUnit_KeepGoing | CXTranslationUnit_SingleFileParse);
@@ -229,7 +231,7 @@ int main(int argc, char* argv[])
             unsigned int numTokens;
             clang_tokenize(tu, range, &tokens, &numTokens);
 
-            print_match_tokens(tu, tokens, numTokens, c);
+            print_match_tokens(tu, tokens, numTokens, file_content, c);
 
             clang_disposeTokens(tu, tokens, numTokens);
         } catch (TkGrepException& e) {
