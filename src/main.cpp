@@ -61,13 +61,10 @@ static void print_match_tokens(const CXTranslationUnit& tu, const CXToken* token
     }
 }
 
-static CXSourceRange get_filerange(const CXTranslationUnit& tu, const std::string& filename)
+static CXSourceRange get_filerange(
+    const CXTranslationUnit& tu, const std::string& filename, unsigned int filesize)
 {
     CXFile file = clang_getFile(tu, filename.c_str());
-    const unsigned int filesize = Util::get_filesize(filename);
-    if (filesize == 0U) {
-        throw TkGrepException("Cannot open file.");
-    }
 
     CXSourceLocation topLoc = clang_getLocationForOffset(tu, file, 0);
     CXSourceLocation lastLoc = clang_getLocationForOffset(tu, file, filesize);
@@ -84,7 +81,7 @@ static CXSourceRange get_filerange(const CXTranslationUnit& tu, const std::strin
     return range;
 }
 
-static void print_usage(int argc, char* argv[])
+static void print_usage(int argc, char* argv[]) noexcept
 {
     CXString version = clang_getClangVersion();
 
@@ -97,7 +94,7 @@ static void print_usage(int argc, char* argv[])
     clang_disposeString(version);
 }
 
-static Config parse_opt(int argc, char* argv[])
+static Config parse_opt(int argc, char* argv[]) noexcept
 {
     Config c;
 
@@ -139,16 +136,24 @@ int main(int argc, char* argv[])
     const Config c = parse_opt(argc, argv);
 
     for (const std::string& file : c.files) {
-        CXIndex index = clang_createIndex(1, 1);
-        CXTranslationUnit tu
-            = clang_parseTranslationUnit(index, file.c_str(), nullptr, 0, nullptr, 0, 0);
+        unsigned int filesize = 0U;
+        try {
+            filesize = Util::get_filesize(file);
+        } catch (const TkGrepException& e) {
+            std::cerr << file << ": " << e.msg << std::endl;
+            continue;
+        }
+
+        CXIndex index = clang_createIndex(1, 0);
+        CXTranslationUnit tu = clang_parseTranslationUnit(index, file.c_str(), nullptr, 0, nullptr,
+            0, CXTranslationUnit_KeepGoing | CXTranslationUnit_SingleFileParse);
         if (tu == nullptr) {
             std::cerr << file << ": Cannot parse translation unit." << std::endl;
             continue;
         }
 
         try {
-            CXSourceRange range = get_filerange(tu, file.c_str());
+            CXSourceRange range = get_filerange(tu, file.c_str(), filesize);
             CXToken* tokens;
             unsigned int numTokens;
             clang_tokenize(tu, range, &tokens, &numTokens);

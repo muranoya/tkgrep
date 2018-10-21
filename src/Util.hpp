@@ -1,6 +1,7 @@
 #ifndef TKGREP_UTIL
 #define TKGREP_UTIL
 
+#include "TkGrepException.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
@@ -11,7 +12,7 @@ unsigned int get_filesize(const std::string& filename)
 {
     std::ifstream file(filename.c_str(), std::ifstream::ate);
     if (!file.is_open()) {
-        return 0UL;
+        throw TkGrepException("Cannot open the file");
     }
     return file.tellg();
 }
