@@ -4,30 +4,46 @@
 #include <clang-c/Index.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <unistd.h>
 
-static const char* get_token_kind(const CXTokenKind& kind)
+static const char* get_token_kind(CXTokenKind kind) noexcept
 {
     switch (kind) {
     case CXToken_Punctuation:
         return "Punctuation";
-        break;
     case CXToken_Keyword:
         return "Keyword";
-        break;
     case CXToken_Identifier:
         return "Identifier";
-        break;
     case CXToken_Literal:
         return "Literal";
-        break;
     case CXToken_Comment:
         return "Comment";
-        break;
     default:
         return "Unknown";
-        break;
+    }
+}
+
+static bool is_match_token_kind(CXTokenKind kind, unsigned char target) noexcept
+{
+    if (target == 0U)
+        return true;
+
+    switch (kind) {
+    case CXToken_Punctuation:
+        return (target & Config::TokenKind::Punctuation) == Config::TokenKind::Punctuation;
+    case CXToken_Keyword:
+        return (target & Config::TokenKind::Keyword) == Config::TokenKind::Keyword;
+    case CXToken_Identifier:
+        return (target & Config::TokenKind::Identifier) == Config::TokenKind::Identifier;
+    case CXToken_Literal:
+        return (target & Config::TokenKind::Literal) == Config::TokenKind::Literal;
+    case CXToken_Comment:
+        return (target & Config::TokenKind::Comment) == Config::TokenKind::Comment;
+    default:
+        return (target & Config::TokenKind::Unknown) == Config::TokenKind::Unknown;
     }
 }
 
@@ -57,11 +73,13 @@ static void print_match_tokens(
         }
 
         if (c.print_tokens_exit || pattern == spell_s) {
-            if (c.only_count) {
-                count++;
-            } else {
-                std::printf("%s:%d:%d\t%s\t%s\n", clang_getCString(filename), line, column,
-                    get_token_kind(kind), clang_getCString(spell));
+            if (is_match_token_kind(kind, c.target)) {
+                if (c.only_count) {
+                    count++;
+                } else {
+                    std::printf("%s:%d:%d\t%s\t%s\n", clang_getCString(filename), line, column,
+                        get_token_kind(kind), clang_getCString(spell));
+                }
             }
         }
 
@@ -101,9 +119,11 @@ static void print_usage(int argc, char* argv[]) noexcept
     std::printf("Usage: %s [OPTION]... PATTERN FILE...\n", argv[0]);
     std::printf("%s\n", clang_getCString(version));
     std::printf("\n");
-    std::printf("\t-i:\tignore case distinctions\n");
-    std::printf("\t-p:\tprint all tokens and exit, ignore PATTERN\n");
-    std::printf("\t-h:\tdisplay this help text\n");
+    std::printf("  -t KIND: token kind to be searched. KIND is p(punctuation), k(keyword), "
+                "i(identifier), l(literal), c(comment), u(unknown)\n");
+    std::printf("  -i: ignore case distinctions\n");
+    std::printf("  -p: print all tokens and exit, ignore PATTERN\n");
+    std::printf("  -h: display this help text\n");
 
     clang_disposeString(version);
 }
@@ -113,8 +133,36 @@ static Config parse_opt(int argc, char* argv[]) noexcept
     Config c;
 
     int opt;
-    while ((opt = getopt(argc, argv, "cpih")) != -1) {
+    while ((opt = getopt(argc, argv, "t:cpih")) != -1) {
         switch (opt) {
+        case 't': {
+            const int len = std::strlen(optarg);
+            for (int i = 0; i < len; ++i) {
+                switch (optarg[i]) {
+                case 'p':
+                    c.target |= Config::TokenKind::Punctuation;
+                    break;
+                case 'k':
+                    c.target |= Config::TokenKind::Keyword;
+                    break;
+                case 'i':
+                    c.target |= Config::TokenKind::Identifier;
+                    break;
+                case 'l':
+                    c.target |= Config::TokenKind::Literal;
+                    break;
+                case 'c':
+                    c.target |= Config::TokenKind::Comment;
+                    break;
+                case 'u':
+                    c.target |= Config::TokenKind::Unknown;
+                    break;
+                default:
+                    std::cerr << "Unknown option value: " << optarg[i] << std::endl;
+                    break;
+                }
+            }
+        } break;
         case 'c':
             c.only_count = true;
             break;
