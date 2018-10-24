@@ -32,6 +32,7 @@ struct MatchLoc {
     {
     }
 
+    // for the find of std::set
     bool operator==(const MatchLoc& other) { return other.line == line; }
 
     int line;
@@ -116,6 +117,39 @@ static void print_result(const std::string& filename, const std::vector<std::str
     }
 }
 
+// @return (line, column)
+static std::pair<int, int> real_matching_row_column(const std::string& str, int line, int col)
+{
+    int real_line = line;
+    int real_col = 0;
+    for (int pos = 0;;) {
+        // is new line?
+        if (str[pos] == '\r' && pos + 1 < str.length() && str[pos + 1] == '\n') {
+            pos += 2;
+            real_line++;
+            real_col = 0;
+            col -= 2;
+        } else if (str[pos] == '\n') {
+            pos++;
+            real_line++;
+            real_col = 0;
+            col--;
+        }
+        if (pos >= str.length()) {
+            break;
+        }
+        if (col <= 0) {
+            return std::make_pair(real_line, real_col);
+        }
+        pos++;
+        real_col++;
+        col--;
+    }
+
+    // not found
+    return std::make_pair(line, col);
+}
+
 static std::set<MatchLoc> match_tokens(const CXTranslationUnit& tu, const CXToken* tokens,
     unsigned int num_tokens, const Config& c) noexcept
 {
@@ -139,7 +173,9 @@ static std::set<MatchLoc> match_tokens(const CXTranslationUnit& tu, const CXToke
 
         std::smatch match;
         if (std::regex_search(spell_s, match, re) && is_match_token_kind(kind, c.target)) {
-            match_lines.emplace(line, kind, column + match.position() - 1, match.length());
+            const auto real_line_col = real_matching_row_column(spell_s, line, match.position());
+            match_lines.emplace(
+                real_line_col.first, kind, column + real_line_col.second - 1, match.length());
         }
 
         clang_disposeString(spell);
