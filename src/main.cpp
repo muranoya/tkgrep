@@ -174,8 +174,9 @@ static std::set<MatchLoc> match_tokens(const CXTranslationUnit& tu, const CXToke
         std::smatch match;
         if (std::regex_search(spell_s, match, re) && is_match_token_kind(kind, c.target)) {
             const auto real_line_col = real_matching_row_column(spell_s, line, match.position());
+            const int col = ((real_line_col.first == line) ? column : 1);
             match_lines.emplace(
-                real_line_col.first, kind, column + real_line_col.second - 1, match.length());
+                real_line_col.first, kind, col + real_line_col.second - 1, match.length());
         }
 
         clang_disposeString(spell);
