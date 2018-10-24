@@ -17,8 +17,8 @@ struct Config {
     // target = 0 then all token kind are searched.
     unsigned char target = 0U;
 
-    int after_context = 0U;
-    int before_context = 0U;
+    unsigned int after_context = 0U;
+    unsigned int before_context = 0U;
 
     bool color_print = false;
 

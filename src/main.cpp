@@ -17,15 +17,15 @@ const std::string CL_RED("\x1B[31m");
 const std::string CL_NO("\033[0m");
 
 struct MatchLoc {
-    explicit MatchLoc(int line, CXTokenKind k, int start, int len)
+    explicit MatchLoc(unsigned int line, CXTokenKind k, unsigned int start, unsigned int len)
         : line(line)
         , kind(k)
         , start(start)
         , len(len)
     {
     }
-    explicit MatchLoc(int l)
-        : line(l)
+    explicit MatchLoc(unsigned int line)
+        : line(line)
         , kind()
         , start(0)
         , len(0)
@@ -35,15 +35,31 @@ struct MatchLoc {
     // for the find of std::set
     bool operator==(const MatchLoc& other) { return other.line == line; }
 
-    int line;
+    unsigned int line;
     CXTokenKind kind;
-    int start;
-    int len;
+    unsigned int start;
+    unsigned int len;
 };
 
 bool operator<(const MatchLoc& lhs, const MatchLoc& rhs) { return lhs.line < rhs.line; }
 
-static const char* get_token_kind(CXTokenKind kind) noexcept
+static const char* get_token_kind_name(CXTokenKind kind) noexcept;
+static bool is_match_token_kind(CXTokenKind kind, unsigned char target) noexcept;
+static void print_result(const std::string& filename, const std::vector<std::string>& file_content,
+    const std::set<MatchLoc>& match_lines, const Config& c) noexcept;
+static std::pair<unsigned int, unsigned int> real_matching_row_column(
+    const std::string& str, int line, int col);
+static std::set<MatchLoc> match_tokens(const CXTranslationUnit& tu, const CXToken* tokens,
+    unsigned int num_tokens, const Config& c) noexcept;
+static CXSourceRange get_filerange(
+    const CXTranslationUnit& tu, const std::string& filename, unsigned int filesize);
+static void print_usage(int argc, char* argv[]) noexcept;
+static Config parse_opt(int argc, char* argv[]) noexcept;
+static void tkgrep_dir(const std::string& filename, const Config& c) noexcept;
+static void tkgrep_file(const std::string& filename, const Config& c) noexcept;
+static void tkgrep_r(const std::string& filename, const Config& c) noexcept;
+
+static const char* get_token_kind_name(CXTokenKind kind) noexcept
 {
     switch (kind) {
     case CXToken_Punctuation:
@@ -94,17 +110,17 @@ static void print_result(const std::string& filename, const std::vector<std::str
         return;
     }
 
-    int printed_line = 1;
+    unsigned int printed_line = 1;
     for (const MatchLoc& m : match_lines) {
-        const int start_line = std::max(printed_line, m.line - c.before_context);
-        const int end_line
-            = std::min(static_cast<int>(file_content.size()), m.line + c.after_context + 1);
-        for (int i = start_line; i < end_line; ++i) {
+        const unsigned int start_line = std::max(printed_line, m.line - c.before_context);
+        const unsigned int end_line = std::min(
+            static_cast<unsigned int>(file_content.size()), m.line + c.after_context + 1U);
+        for (unsigned int i = start_line; i < end_line; ++i) {
             const char* tk = " ";
             const auto& iter = match_lines.find(MatchLoc(i));
             std::string match_line = file_content[i - 1];
             if (iter != match_lines.cend()) {
-                tk = get_token_kind(iter->kind);
+                tk = get_token_kind_name(iter->kind);
                 if (c.color_print && !c.stdout_is_pipe) {
                     match_line.insert(iter->start, CL_RED);
                     match_line.insert(iter->start + iter->len + CL_RED.length(), CL_NO);
@@ -118,11 +134,12 @@ static void print_result(const std::string& filename, const std::vector<std::str
 }
 
 // @return (line, column)
-static std::pair<int, int> real_matching_row_column(const std::string& str, int line, int col)
+static std::pair<unsigned int, unsigned int> real_matching_row_column(
+    const std::string& str, int line, int col)
 {
     int real_line = line;
     int real_col = 0;
-    for (int pos = 0;;) {
+    for (size_t pos = 0;;) {
         // is new line?
         if (str[pos] == '\r' && pos + 1 < str.length() && str[pos + 1] == '\n') {
             pos += 2;
@@ -238,7 +255,7 @@ static Config parse_opt(int argc, char* argv[]) noexcept
                 std::cerr << c_len << ": invalid context length argument" << std::endl;
                 std::exit(EXIT_FAILURE);
             } else {
-                c.after_context = std::max(c_len, c.after_context);
+                c.after_context = std::max(static_cast<unsigned int>(c_len), c.after_context);
             }
         } break;
         case 'B': {
@@ -247,7 +264,7 @@ static Config parse_opt(int argc, char* argv[]) noexcept
                 std::cerr << c_len << ": invalid context length argument" << std::endl;
                 std::exit(EXIT_FAILURE);
             } else {
-                c.before_context = std::max(c_len, c.before_context);
+                c.before_context = std::max(static_cast<unsigned int>(c_len), c.before_context);
             }
         } break;
         case 'C': {
@@ -256,8 +273,8 @@ static Config parse_opt(int argc, char* argv[]) noexcept
                 std::cerr << c_len << ": invalid context length argument" << std::endl;
                 std::exit(EXIT_FAILURE);
             } else {
-                c.after_context = std::max(c_len, c.after_context);
-                c.before_context = std::max(c_len, c.before_context);
+                c.after_context = std::max(static_cast<unsigned int>(c_len), c.after_context);
+                c.before_context = std::max(static_cast<unsigned int>(c_len), c.before_context);
             }
         } break;
         case 't': {
@@ -330,6 +347,74 @@ static Config parse_opt(int argc, char* argv[]) noexcept
     return c;
 }
 
+static void tkgrep_dir(const std::string& filename, const Config& c) noexcept
+{
+    DIR* const dirp = opendir(filename.c_str());
+    if (dirp == nullptr) {
+        return;
+    }
+
+    for (;;) {
+        const struct dirent* const dp = readdir(dirp);
+        if (dp == nullptr) {
+            break;
+        }
+        if (std::string(dp->d_name) == "." || std::string(dp->d_name) == "..") {
+            continue;
+        }
+
+        std::string next_path = filename;
+        if (next_path.back() != '/') {
+            next_path += '/';
+        }
+        next_path += dp->d_name;
+        tkgrep_r(next_path, c);
+    }
+}
+
+static void tkgrep_file(const std::string& filename, const Config& c) noexcept
+{
+    unsigned int filesize = 0U;
+    try {
+        filesize = Util::get_filesize(filename);
+    } catch (const TkGrepException& e) {
+        std::cerr << filename << ": " << e.msg << std::endl;
+        return;
+    }
+
+    const std::vector<std::string> file_content = Util::read_file_content(filename);
+
+    CXIndex index = clang_createIndex(1, 0);
+    CXTranslationUnit tu = clang_parseTranslationUnit(
+        index, filename.c_str(), nullptr, 0, nullptr, 0, CXTranslationUnit_KeepGoing);
+    if (tu == nullptr) {
+        std::cerr << filename << ": Cannot parse translation unit." << std::endl;
+        clang_disposeIndex(index);
+        return;
+    }
+
+    CXSourceRange range;
+    try {
+        range = get_filerange(tu, filename.c_str(), filesize);
+    } catch (TkGrepException& e) {
+        std::cerr << filename << ": " << e.msg << std::endl;
+        clang_disposeTranslationUnit(tu);
+        clang_disposeIndex(index);
+        return;
+    }
+
+    CXToken* tokens;
+    unsigned int numTokens;
+    clang_tokenize(tu, range, &tokens, &numTokens);
+
+    const std::set<MatchLoc> match_lines = match_tokens(tu, tokens, numTokens, c);
+    print_result(filename, file_content, match_lines, c);
+
+    clang_disposeTokens(tu, tokens, numTokens);
+    clang_disposeTranslationUnit(tu);
+    clang_disposeIndex(index);
+}
+
 static void tkgrep_r(const std::string& filename, const Config& c) noexcept
 {
     bool is_dir = false;
@@ -341,67 +426,9 @@ static void tkgrep_r(const std::string& filename, const Config& c) noexcept
     }
 
     if (is_dir) {
-        DIR* dirp = opendir(filename.c_str());
-        if (dirp == nullptr) {
-            return;
-        }
-
-        for (;;) {
-            struct dirent* dp = readdir(dirp);
-            if (dp == nullptr) {
-                break;
-            }
-            if (std::string(dp->d_name) == "." || std::string(dp->d_name) == "..") {
-                continue;
-            }
-
-            std::string next_path = filename;
-            if (next_path.back() != '/') {
-                next_path += '/';
-            }
-            next_path += dp->d_name;
-            tkgrep_r(next_path, c);
-        }
+        tkgrep_dir(filename, c);
     } else {
-        unsigned int filesize = 0U;
-        try {
-            filesize = Util::get_filesize(filename);
-        } catch (const TkGrepException& e) {
-            std::cerr << filename << ": " << e.msg << std::endl;
-            return;
-        }
-
-        const std::vector<std::string> file_content = Util::read_file_content(filename);
-
-        CXIndex index = clang_createIndex(1, 0);
-        CXTranslationUnit tu = clang_parseTranslationUnit(index, filename.c_str(), nullptr, 0,
-            nullptr, 0, CXTranslationUnit_KeepGoing | CXTranslationUnit_SingleFileParse);
-        if (tu == nullptr) {
-            std::cerr << filename << ": Cannot parse translation unit." << std::endl;
-            clang_disposeIndex(index);
-            return;
-        }
-
-        CXSourceRange range;
-        try {
-            range = get_filerange(tu, filename.c_str(), filesize);
-        } catch (TkGrepException& e) {
-            std::cerr << filename << ": " << e.msg << std::endl;
-            clang_disposeTranslationUnit(tu);
-            clang_disposeIndex(index);
-            return;
-        }
-
-        CXToken* tokens;
-        unsigned int numTokens;
-        clang_tokenize(tu, range, &tokens, &numTokens);
-
-        const std::set<MatchLoc> match_lines = match_tokens(tu, tokens, numTokens, c);
-        print_result(filename, file_content, match_lines, c);
-
-        clang_disposeTokens(tu, tokens, numTokens);
-        clang_disposeTranslationUnit(tu);
-        clang_disposeIndex(index);
+        tkgrep_file(filename, c);
     }
 }
 
