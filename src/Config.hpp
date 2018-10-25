@@ -30,6 +30,7 @@ struct Config {
 
     bool only_count = false;
     bool ignore_case = false;
+    bool quiet_error = false;
     std::string pattern;
     std::vector<std::string> files;
 };

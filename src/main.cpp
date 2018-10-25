@@ -55,9 +55,12 @@ static CXSourceRange get_filerange(
     const CXTranslationUnit& tu, const std::string& filename, unsigned int filesize);
 static void print_usage(int argc, char* argv[]) noexcept;
 static Config parse_opt(int argc, char* argv[]) noexcept;
-static void tkgrep_dir(const std::string& filename, const Config& c) noexcept;
-static void tkgrep_file(const std::string& filename, const Config& c) noexcept;
-static void tkgrep_r(const std::string& filename, const Config& c) noexcept;
+static void tkgrep_dir(
+    const std::string& filename, const std::string& basename, const Config& c) noexcept;
+static void tkgrep_file(
+    const std::string& filename, const std::string& basename, const Config& c) noexcept;
+static void tkgrep_r(
+    const std::string& filename, const std::string& basename, const Config& c) noexcept;
 
 static const char* get_token_kind_name(CXTokenKind kind) noexcept
 {
@@ -127,7 +130,7 @@ static void print_result(const std::string& filename, const std::vector<std::str
                 }
             }
 
-            std::printf("%s:%d:%s\t%s\n", filename.c_str(), i, tk, match_line.c_str());
+            std::printf("%s:%d:%s %s\n", filename.c_str(), i, tk, match_line.c_str());
             printed_line = i + 1;
         }
     }
@@ -237,6 +240,7 @@ static void print_usage(int argc, char* argv[]) noexcept
     std::printf("  -G: Surround the matched strings with color on the terminal.\n");
     std::printf("  -R: Read all files under each directory.\n");
     std::printf("  -i: Ignore case distinctions.\n");
+    std::printf("  -q: Quiet error message.\n");
     std::printf("  -h: Display this help text.\n");
 
     clang_disposeString(version);
@@ -247,7 +251,7 @@ static Config parse_opt(int argc, char* argv[]) noexcept
     Config c;
 
     int opt;
-    while ((opt = getopt(argc, argv, "A:B:C:t:GRcih")) != -1) {
+    while ((opt = getopt(argc, argv, "A:B:C:t:GRciqh")) != -1) {
         switch (opt) {
         case 'A': {
             const int c_len = std::atoi(optarg);
@@ -317,6 +321,9 @@ static Config parse_opt(int argc, char* argv[]) noexcept
         case 'i':
             c.ignore_case = true;
             break;
+        case 'q':
+            c.quiet_error = true;
+            break;
         case 'h':
         default:
             print_usage(argc, argv);
@@ -347,7 +354,8 @@ static Config parse_opt(int argc, char* argv[]) noexcept
     return c;
 }
 
-static void tkgrep_dir(const std::string& filename, const Config& c) noexcept
+static void tkgrep_dir(
+    const std::string& filename, const std::string& basename, const Config& c) noexcept
 {
     DIR* const dirp = opendir(filename.c_str());
     if (dirp == nullptr) {
@@ -368,17 +376,20 @@ static void tkgrep_dir(const std::string& filename, const Config& c) noexcept
             next_path += '/';
         }
         next_path += dp->d_name;
-        tkgrep_r(next_path, c);
+        tkgrep_r(next_path, basename + "/" + dp->d_name, c);
     }
 }
 
-static void tkgrep_file(const std::string& filename, const Config& c) noexcept
+static void tkgrep_file(
+    const std::string& filename, const std::string& basename, const Config& c) noexcept
 {
     unsigned int filesize = 0U;
     try {
         filesize = Util::get_filesize(filename);
     } catch (const TkGrepException& e) {
-        std::cerr << filename << ": " << e.msg << std::endl;
+        if (!c.quiet_error) {
+            std::cerr << filename << ": " << e.msg << std::endl;
+        }
         return;
     }
 
@@ -388,7 +399,9 @@ static void tkgrep_file(const std::string& filename, const Config& c) noexcept
     CXTranslationUnit tu = clang_parseTranslationUnit(
         index, filename.c_str(), nullptr, 0, nullptr, 0, CXTranslationUnit_KeepGoing);
     if (tu == nullptr) {
-        std::cerr << filename << ": Cannot parse translation unit." << std::endl;
+        if (!c.quiet_error) {
+            std::cerr << filename << ": Cannot parse translation unit." << std::endl;
+        }
         clang_disposeIndex(index);
         return;
     }
@@ -397,7 +410,9 @@ static void tkgrep_file(const std::string& filename, const Config& c) noexcept
     try {
         range = get_filerange(tu, filename.c_str(), filesize);
     } catch (TkGrepException& e) {
-        std::cerr << filename << ": " << e.msg << std::endl;
+        if (!c.quiet_error) {
+            std::cerr << filename << ": " << e.msg << std::endl;
+        }
         clang_disposeTranslationUnit(tu);
         clang_disposeIndex(index);
         return;
@@ -408,27 +423,30 @@ static void tkgrep_file(const std::string& filename, const Config& c) noexcept
     clang_tokenize(tu, range, &tokens, &numTokens);
 
     const std::set<MatchLoc> match_lines = match_tokens(tu, tokens, numTokens, c);
-    print_result(filename, file_content, match_lines, c);
+    print_result(basename, file_content, match_lines, c);
 
     clang_disposeTokens(tu, tokens, numTokens);
     clang_disposeTranslationUnit(tu);
     clang_disposeIndex(index);
 }
 
-static void tkgrep_r(const std::string& filename, const Config& c) noexcept
+static void tkgrep_r(
+    const std::string& filename, const std::string& basename, const Config& c) noexcept
 {
     bool is_dir = false;
     try {
         is_dir = Util::is_directory(filename);
     } catch (const TkGrepException& e) {
-        std::cerr << filename << ": " << e.msg << std::endl;
+        if (!c.quiet_error) {
+            std::cerr << filename << ": " << e.msg << std::endl;
+        }
         return;
     }
 
     if (is_dir) {
-        tkgrep_dir(filename, c);
+        tkgrep_dir(filename, basename, c);
     } else {
-        tkgrep_file(filename, c);
+        tkgrep_file(filename, basename, c);
     }
 }
 
@@ -437,7 +455,8 @@ int main(int argc, char* argv[])
     const Config c = parse_opt(argc, argv);
 
     for (const std::string& file : c.files) {
-        tkgrep_r(file, c);
+        std::string path = basename(file.c_str());
+        tkgrep_r(file, path, c);
     }
 
     return EXIT_SUCCESS;
